@@ -1,8 +1,9 @@
 // my_predictor.h
-// Hybrid predictor combining global and local history
+// *CHANGE* Hybrid predictor combining global and local history
 
 class my_update : public branch_update {
 public:
+	// *CHANGE* Make an indec for global and local history to better inform our prediction
     unsigned int gindex;  // Global history index
     unsigned int lindex;  // Local history index
     unsigned int choice_index;  // Index for choice predictor
@@ -10,17 +11,21 @@ public:
 
 class my_predictor : public branch_predictor {
 public:
-    #define GLOBAL_HISTORY_LENGTH 16
-    #define LOCAL_HISTORY_LENGTH 12
+    /* *CHANGE*: Increased GLOBAL_HISTORY_LENGTH and LOCAL_HISTORY_LENGTH 
+	for better correlation of distant branches and better capture longer local patterns */
+    #define GLOBAL_HISTORY_LENGTH 18
+    #define LOCAL_HISTORY_LENGTH 14
     #define GLOBAL_TABLE_BITS 14
     #define LOCAL_TABLE_BITS 14
     #define LOCAL_HISTORY_TABLE_BITS 10
-    #define CHOICE_HISTORY_LENGTH 16
+    // *CHANGE*: Increased CHOICE_HISTORY_LENGTH to match global history length for better selection
+    #define CHOICE_HISTORY_LENGTH 18
     #define CHOICE_TABLE_BITS 14
 
     my_update u;
     branch_info bi;
     
+	// *CHANGE* Rather than supporting only one history table, track global and local history
     // Global history register
     unsigned int global_history;
     
@@ -33,20 +38,21 @@ public:
     unsigned char *choice_table;  // Choice predictor
 
     my_predictor(void) : global_history(0) {
-        // Allocate and initialize local history table
+        // *CHANGE* Allocate and initialize local history table
         local_history_table = new unsigned int[1 << LOCAL_HISTORY_TABLE_BITS]();
         
-        // Allocate and initialize prediction tables
+        // *CHANGE* Allocate and initialize prediction tables
         global_table = new unsigned char[1 << GLOBAL_TABLE_BITS]();
         local_table = new unsigned char[1 << LOCAL_TABLE_BITS]();
         choice_table = new unsigned char[1 << CHOICE_TABLE_BITS]();
         
-        // Initialize all tables with weak taken (2)
+        // *CHANGE* Initialize all tables with weak taken (2)
         memset(global_table, 2, 1 << GLOBAL_TABLE_BITS);
         memset(local_table, 2, 1 << LOCAL_TABLE_BITS);
         memset(choice_table, 2, 1 << CHOICE_TABLE_BITS);
     }
 
+	// Add destructor
     ~my_predictor(void) {
         delete[] local_history_table;
         delete[] global_table;
@@ -54,12 +60,14 @@ public:
         delete[] choice_table;
     }
 
-    // Improved hash function
+    // *CHANGE* Improved hash function
     unsigned int compute_index(unsigned int address, unsigned int history, 
                              unsigned int table_bits, unsigned int history_length) {
         unsigned int index = address ^ (address >> (table_bits/2));
         index ^= history ^ (history << (table_bits/3));
         index ^= (history >> (history_length/2)) * 7919;  // Prime multiplier
+        // *CHANGE*: Added extra mixing of address and history bits for better distribution
+        index ^= ((address >> (table_bits/2)) * 31) ^ ((history >> (history_length/3)) * 13);
         return index & ((1 << table_bits) - 1);
     }
 
@@ -74,7 +82,8 @@ public:
                                    GLOBAL_TABLE_BITS, GLOBAL_HISTORY_LENGTH);
             u.lindex = compute_index(b.address, local_hist,
                                    LOCAL_TABLE_BITS, LOCAL_HISTORY_LENGTH);
-            u.choice_index = compute_index(b.address, global_history,
+            // *CHANGE*: Modified choice index computation to use global history for better selection
+            u.choice_index = compute_index(b.address, global_history ^ (global_history >> 4),
                                          CHOICE_TABLE_BITS, CHOICE_HISTORY_LENGTH);
 
             // Get predictions
@@ -82,7 +91,7 @@ public:
             bool local_pred = local_table[u.lindex] >> 1;
             bool use_global = choice_table[u.choice_index] >> 1;
 
-            // Final prediction based on choice predictor
+            // *CHANGE* Final prediction based on choice predictor
             u.direction_prediction(use_global ? global_pred : local_pred);
         } else {
             u.direction_prediction(true);
@@ -96,11 +105,11 @@ public:
             my_update *mu = (my_update*)u;
             unsigned int local_hist_idx = (bi.address >> 2) & ((1 << LOCAL_HISTORY_TABLE_BITS) - 1);
 
-            // Update predictors
+            // *CHANGE* Update predictors
             bool global_pred = global_table[mu->gindex] >> 1;
             bool local_pred = local_table[mu->lindex] >> 1;
 
-            // Update choice predictor
+            // *CHANGE* Update choice predictor
             if (global_pred != local_pred) {
                 unsigned char *choice_counter = &choice_table[mu->choice_index];
                 if (global_pred == taken) {
@@ -110,7 +119,7 @@ public:
                 }
             }
 
-            // Update global table
+            // *CHANGE* Update global table
             unsigned char *global_counter = &global_table[mu->gindex];
             if (taken) {
                 if (*global_counter < 3) (*global_counter)++;
@@ -118,7 +127,7 @@ public:
                 if (*global_counter > 0) (*global_counter)--;
             }
 
-            // Update local table
+            // *CHANGE* Update local table
             unsigned char *local_counter = &local_table[mu->lindex];
             if (taken) {
                 if (*local_counter < 3) (*local_counter)++;
